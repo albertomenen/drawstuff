@@ -30,6 +30,7 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (..
 export default function EditorPage() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const isDataLoadedRef = useRef(false); // Track if data load attempt completed
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false); // State for AI generation loading
 
   // Fetch initial document - disable more refetches
   const { data: initialDocument, isLoading: isLoadingDocument, error: documentError, isSuccess: isDocumentLoadSuccess } = api.document.getDocument.useQuery(
@@ -48,62 +49,63 @@ export default function EditorPage() {
      onError: (error) => console.error("Error saving document:", error)
   });
 
+  // *** Add the tRPC mutation hook for AI generation ***
+  const generateImageMutation = api.ai.generateImageFromSvg.useMutation({
+      onSuccess: (data) => {
+          if (data.success && data.imageUrl) {
+              console.log("Successfully generated image URL:", data.imageUrl);
+              alert(`Image generated! URL: ${data.imageUrl}`); // Replace with better UI
+
+              // Optional: Add image shape to canvas
+              if (editor) {
+                  const bounds = editor.getSelectionPageBounds();
+                  const PADDING = 20;
+                  const IMAGE_SIZE = 200; // Example size
+                   if (bounds) {
+                     editor.createShapes([
+                        {
+                            type: 'image',
+                            x: bounds.maxX + PADDING, // Position to the right of selection
+                            y: bounds.y,
+                            props: { url: data.imageUrl, w: IMAGE_SIZE, h: IMAGE_SIZE }
+                        }
+                     ]);
+                     // Optional: deselect original shapes
+                     editor.selectNone();
+                   } else {
+                      // Fallback position if no bounds (e.g., page center)
+                       editor.createShapes([
+                        { type: 'image', x: editor.getViewportPageCenter().x, y: editor.getViewportPageCenter().y, props: { url: data.imageUrl, w: IMAGE_SIZE, h: IMAGE_SIZE } }
+                     ]);
+                   }
+              }
+
+
+          } else {
+              console.error("AI generation failed on server:", data.error);
+              alert(`Image generation failed: ${data.error || 'Unknown server error'}`);
+          }
+           setIsGeneratingImage(false); // End loading state on success/handled error
+      },
+      onError: (error) => {
+          console.error("Error calling generateImage mutation:", error);
+          alert(`Image generation failed: ${error.message}`);
+          setIsGeneratingImage(false); // End loading state on network/trpc error
+      },
+  });
+
   // Debounced save function
   const debouncedSave = useCallback(
 	debounce((editorInstance: Editor) => {
         if (!editorInstance) return;
 		const snapshot = editorInstance.store.getSnapshot();
+        // *** Log the snapshot structure on the client BEFORE sending ***
+        console.log("Client: Snapshot before saving:", JSON.stringify(snapshot, null, 2));
         console.log("Saving document snapshot...");
         saveDocument(snapshot);
 	}, 1000),
 	[saveDocument]
   );
-
-  // Effect to load initial data into the editor ONCE
-  useEffect(() => {
-      // Wait for editor instance AND for data fetch to finish AND ensure it runs only once
-      if (!editor || isDataLoadedRef.current || isLoadingDocument) return;
-
-      console.log("Attempting to load initial data...");
-
-      if (isDocumentLoadSuccess) {
-          if (initialDocument) {
-              // *** Add detailed client-side logging BEFORE loading ***
-              console.log("Client: Received initialDocument:", JSON.stringify(initialDocument, null, 2));
-              console.log("Client: Type of initialDocument:", typeof initialDocument);
-              console.log("Client: Checking schema presence:", initialDocument.hasOwnProperty('schema'));
-              if (initialDocument.hasOwnProperty('schema')) {
-                  console.log("Client: Type of initialDocument.schema:", typeof initialDocument.schema);
-                  console.log("Client: Checking schemaVersion presence:", initialDocument.schema?.hasOwnProperty('schemaVersion'));
-                   if (initialDocument.schema?.hasOwnProperty('schemaVersion')) {
-                       console.log("Client: schemaVersion value:", initialDocument.schema.schemaVersion);
-                   }
-              }
-              console.log("Client: Checking store presence:", initialDocument.hasOwnProperty('store'));
-               if (initialDocument.hasOwnProperty('store')) {
-                   console.log("Client: Type of initialDocument.store:", typeof initialDocument.store);
-               }
-
-              console.log("Client: Attempting editor.store.loadSnapshot...");
-              try {
-                  // Ensure we pass a valid TLStoreSnapshot
-                  editor.store.loadSnapshot(initialDocument as TLStoreSnapshot);
-                  console.log("Client: Initial document loaded successfully.");
-              } catch (e) {
-                  console.error("Client: Error calling loadSnapshot:", e);
-                  // *** Simplify fallback: Just log, don't attempt another load ***
-                  console.log("Client: Proceeding with an empty editor due to load error.");
-              }
-          } else {
-              console.log("Client: No initial document found (initialDocument is null/undefined), starting fresh.");
-          }
-          isDataLoadedRef.current = true; // Mark data load attempt as complete
-      } else if (documentError) {
-          console.error("Client: Failed to fetch initial document. Starting fresh.", documentError);
-          isDataLoadedRef.current = true; // Mark data load attempt as complete (even on error)
-      }
-
-  }, [editor, initialDocument, isDocumentLoadSuccess, documentError, isLoadingDocument]); // Dependencies
 
   // Effect to set up the store listener
   useEffect(() => {
@@ -181,35 +183,60 @@ export default function EditorPage() {
     }
   };
 
-  // Show loading state until the initial data fetch attempt is completed
-  if (isLoadingDocument && !isDataLoadedRef.current) {
-    return <div className="fixed inset-0 flex items-center justify-center">Loading Editor Data...</div>;
-  }
+  // *** Add handler for Generate Image button ***
+  const handleGenerateImage = async () => {
+      if (!editor) return;
+      const selectedShapes = editor.getSelectedShapes();
+      if (selectedShapes.length === 0) {
+          alert("Please select some shapes first.");
+          return;
+      }
+      console.log(`Generating image from ${selectedShapes.length} shapes...`);
+      setIsGeneratingImage(true); // Start loading state
 
-  // Handle explicit document fetch error *before* rendering the editor if data load hasn't been marked complete
-  if (documentError && !isDataLoadedRef.current) {
-    return <div className="fixed inset-0 flex items-center justify-center text-red-500">Error loading document: {documentError.message}</div>;
-  }
+      try {
+          const svgString = await editor.getSvgString(selectedShapes, { scale: 1, background: false });
+          if (!svgString) throw new Error("Failed to generate SVG for selected shapes.");
+
+          console.log("Generated SVG:", svgString);
+          // Call the tRPC mutation
+          generateImageMutation.mutate({ svgString });
+
+      } catch (error) {
+          console.error("Error preparing for image generation:", error);
+          alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
+          setIsGeneratingImage(false); // End loading state if SVG generation fails
+      }
+      // NOTE: setIsGeneratingImage(false) is now handled by the mutation's onSuccess/onError
+  };
 
   // Render the editor. The useEffect hooks will handle setting up the editor instance,
   // loading data into it, and setting up listeners.
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
         <DynamicTldraw
-          // Maybe clear local storage for this key if issues persist
-          persistenceKey="tldraw-editor-test-v3"
-          onMount={handleMount} // Sets the editor state
+          persistenceKey="tldraw-editor-test-v4"
+          onMount={handleMount}
         >
           {/* Custom UI - Render only when editor is available */}
           {editor && (
-             <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000 }}>
+             <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, display: 'flex', gap: '8px' }}> {/* Use flex for layout */}
                  <Button onClick={handleModifyShape} disabled={isSavingDocument}>
                      {isSavingDocument ? 'Saving...' : 'Modify Shape'}
                  </Button>
-                 {saveError && <p className="text-red-500 text-xs mt-1">Save failed</p>}
-                 {isSavingDocument && <p className="text-blue-500 text-xs mt-1">Saving...</p>}
-                 {/* Show non-blocking note if initial load failed but we proceeded */}
-                 {documentError && isDataLoadedRef.current && <p className="text-yellow-500 text-xs mt-1">Note: Failed to load previous state.</p>}
+                 <Button
+                     onClick={handleGenerateImage}
+                     disabled={isGeneratingImage || !editor} // Disable if generating or no editor
+                 >
+                     {isGeneratingImage ? 'Generating...' : 'Generate Image'}
+                 </Button>
+                 {/* Status indicators - remove documentError check related to loading */}
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft:'10px' }}>
+                     {saveError && <p className="text-red-500 text-xs">Save failed</p>}
+                     {isSavingDocument && <p className="text-blue-500 text-xs">Saving...</p>}
+                     {generateImageMutation.error && <p className="text-red-500 text-xs">AI Error: {generateImageMutation.error.message}</p>}
+                     {/* {documentError && isDataLoadedRef.current && <p className="text-yellow-500 text-xs">Note: Failed to load previous state.</p>} */}
+                 </div>
             </div>
           )}
         </DynamicTldraw>

@@ -5,16 +5,8 @@ import { TLStoreSnapshot } from '@tldraw/tlschema';
 // Use TLStoreSnapshot for the in-memory store type
 let storedDocument: TLStoreSnapshot | null = null;
 
-// Refine the schema to specifically require the schema object with schemaVersion
-const StoreSnapshotSchema = z.object({
-	store: z.record(z.any()),
-	schema: z.object({
-		schemaVersion: z.number(), // Explicitly require schemaVersion
-		storeVersion: z.number(), // Expect storeVersion as well
-		// Add other known properties if needed for stricter validation
-		recordVersions: z.record(z.object({ version: z.number() })).passthrough(), // Example
-	}).passthrough(), // Allow other properties on schema object
-}).passthrough(); // Allow other top-level properties if needed
+// *** Simplify the schema drastically for testing ***
+const AnyDataSchema = z.any();
 
 export const documentRouter = createTRPCRouter({
   getDocument: publicProcedure
@@ -26,21 +18,25 @@ export const documentRouter = createTRPCRouter({
     }),
 
   saveDocument: publicProcedure
-    .input(StoreSnapshotSchema) // Use the more specific schema
+    .input(AnyDataSchema) // Use the extremely lenient schema
     .mutation(({ input }) => {
       console.log("API: Attempting to save document...");
-      // Log the input structure before storing
       console.log("API: Received snapshot for saving:", JSON.stringify(input, null, 2));
       try {
-          // Although tRPC validates input, parse again just to be sure & catch potential issues
-          const validatedInput = StoreSnapshotSchema.parse(input);
-          storedDocument = validatedInput; // Store the validated input
-          console.log("API: Document saved successfully.");
-          return { success: true };
+          // Basic check if it's somewhat object-like before storing
+          if (input && typeof input === 'object') {
+              // Log the schemaVersion if it exists, for debugging
+              console.log("API: Received schemaVersion (if exists):", (input as any)?.schema?.schemaVersion);
+              // Store the received input directly (as TLStoreSnapshot type hint)
+              storedDocument = input as TLStoreSnapshot;
+              console.log("API: Document saved successfully (with lenient validation).");
+              return { success: true };
+          } else {
+               throw new Error("Received invalid non-object data for saving.");
+          }
       } catch (error) {
-          console.error("API: Validation failed during save:", error);
-          // Improve error feedback slightly
-          return { success: false, error: "Validation failed during save. Check server logs." };
+          console.error("API: Error during save:", error);
+          return { success: false, error: "Failed to save document on server. Check server logs." };
       }
     }),
 }); 

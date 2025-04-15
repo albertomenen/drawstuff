@@ -1,7 +1,11 @@
 // src/trpc/server.ts
 import { initTRPC } from '@trpc/server';
 // import { CreateNextContextOptions } from '@trpc/server/adapters/next'; // <-- Remove this import
-// import superjson from 'superjson'; // <-- Temporarily remove superjson
+// Import the Prediction type
+import type { Prediction } from 'replicate';
+// Remove the circular import below
+// import { createTRPCRouter, publicProcedure } from '@/trpc/server'; 
+import superjson from 'superjson'; // <-- Re-enable import
 
 // Define a type for the context based on fetch adapter needs (e.g., Headers)
 interface CreateContextOptions {
@@ -17,7 +21,7 @@ export const createTRPCContext = async (opts: CreateContextOptions) => {
 
 // Initialize tRPC
 const t = initTRPC.context<typeof createTRPCContext>().create({
-  // transformer: superjson, // <-- Temporarily remove transformer
+  transformer: superjson, // <-- Re-enable transformer
   errorFormatter({ shape }) {
     return shape;
   },

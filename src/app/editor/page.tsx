@@ -66,6 +66,9 @@ export default function EditorPage() {
                   const bounds = editor.getSelectionPageBounds(); 
                   editor.selectNone(); // Deselect immediately
                   
+                  // *** Log the calculated bounds ***
+                  console.log("Calculated bounds for replacement:", bounds);
+
                   if (!bounds) { 
                       console.error("Could not calculate bounds for original shapes.");
                       // Handle error or fallback (e.g., place image at center)
@@ -78,21 +81,22 @@ export default function EditorPage() {
                   console.log("Replacing original shapes with generated image:", idsToDelete);
                   editor.deleteShapes(idsToDelete);
                   
-                  // Create the new image shape at the original position and size
-                  editor.createShapes([
-                      {
-                          type: 'image',
-                          x: bounds.minX,
-                          y: bounds.minY,
-                          props: { 
-                              url: data.imageUrl, 
-                              w: bounds.width,
-                              h: bounds.height,
-                              // Optional: maintain aspect ratio? Might need more logic
-                              // assetId: null, // Or generate one if needed
-                          }
+                  // *** Log the properties before creating the shape ***
+                  const imageShapeProps = {
+                      type: 'image' as const, // Ensure type is literal
+                      x: bounds.minX,
+                      y: bounds.minY,
+                      props: { 
+                          url: data.imageUrl, 
+                          w: bounds.width,
+                          h: bounds.height,
                       }
-                  ]);
+                  };
+                  console.log("Creating image shape with props:", imageShapeProps);
+
+                  // Create the new image shape at the original position and size
+                  editor.createShapes([imageShapeProps]); // Use the logged props
+                  
                   editor.selectNone();
                   generatingShapeIdsRef.current = []; // Clear the ref
               } else {

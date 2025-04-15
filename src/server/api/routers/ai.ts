@@ -3,6 +3,8 @@ import { TRPCError } from '@trpc/server';
 import Replicate from 'replicate'; // Import the Replicate client
 import type { Prediction } from 'replicate';
 import { createTRPCRouter, publicProcedure } from '@/trpc/server';
+// Import sharp
+import sharp from 'sharp';
 // We'll need a library like 'sharp' or 'resvg' on the server to convert SVG to PNG later
 // import sharp from 'sharp'; 
 
@@ -11,20 +13,34 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-// Placeholder function - Needs actual SVG to Image conversion
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function convertSvgToImageDataUri(_svgString: string): Promise<string> {
-    console.log("AI Router: [Placeholder] Converting SVG to Image Data URI...");
-    // *** Implement actual SVG to PNG/JPG conversion here ***
-    // Example using a hypothetical library:
-    // const pngBuffer = await SomeSvgConverter.render(svgString, { format: 'png', width: 512 });
-    // return `data:image/png;base64,${pngBuffer.toString('base64')}`;
-    
-    // *** FOR NOW: Return a placeholder or throw error ***
-    // Returning a known placeholder image URL for testing ControlNet input
-    console.warn("AI Router: SVG to Image conversion is NOT implemented. Using placeholder image URI for Replicate.")
-    return "https://replicate.delivery/pbxt/IJE6zP4jtdwxe7SffC7te9DPHWHW99dMXED5AWamlBNcvxn0/user_1.png"; // Default user_1.png from example
-    // OR throw new Error("SVG to Image conversion not implemented on server."); 
+// Function to convert SVG string to PNG Data URI using sharp
+async function convertSvgToImageDataUri(svgString: string): Promise<string> {
+    console.log("AI Router: Converting SVG to PNG Data URI using sharp...");
+    try {
+        // Ensure SVG has width and height, sharp might need them
+        // Basic check, might need more robust parsing
+        if (!svgString.includes('width=') || !svgString.includes('height=')) {
+            console.warn("SVG string might be missing width/height attributes, attempting conversion anyway.");
+            // Potentially inject default size if needed, e.g.:
+            // svgString = svgString.replace('<svg ', '<svg width="512" height="512" ');
+        }
+
+        const pngBuffer = await sharp(Buffer.from(svgString))
+            .resize(512, 512) // Resize to a standard dimension if needed
+            .png()
+            .toBuffer();
+
+        const dataUri = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+        console.log(`AI Router: Conversion successful. Data URI length: ${dataUri.length}`);
+        return dataUri;
+    } catch (error) {
+        console.error("AI Router: Error converting SVG to PNG:", error);
+        throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Failed to convert SVG drawing to image for AI processing.',
+            cause: error,
+        });
+    }
 }
 
 // Updated function to use predictions.create and wait
@@ -63,7 +79,8 @@ async function generateImageWithReplicate(
 
         if (initialPrediction.status === 'failed') {
             console.error("AI Router: Prediction failed immediately on creation.", initialPrediction.error);
-            throw new Error(initialPrediction.error || "Prediction failed immediately.");
+            // Explicitly convert error to string for Error constructor
+            throw new Error(String(initialPrediction.error ?? "Prediction failed immediately."));
         }
 
         // Wait for the prediction to complete (or fail)

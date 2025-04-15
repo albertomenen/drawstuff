@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Editor, TLShapeId,  TLRecord } from '@tldraw/tldraw';
 import '@tldraw/tldraw/tldraw.css';
 import { api } from '@/trpc/react';
@@ -31,8 +31,6 @@ export default function EditorPage() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [userPrompt, setUserPrompt] = useState("make a crazy version of that draw");
-  // Ref to store IDs of shapes used for generation
-  const generatingShapeIdsRef = useRef<TLShapeId[]>([]);
 
   // Fetch initial document - call query without destructuring unused variables
   api.document.getDocument.useQuery(
@@ -56,58 +54,10 @@ export default function EditorPage() {
       onSuccess: (data) => {
           if (data.success && data.imageUrl) {
               console.log("Successfully generated image URL:", data.imageUrl);
-              alert(`Image generated! URL: ${data.imageUrl}`);
-
-              if (editor && generatingShapeIdsRef.current.length > 0) {
-                  const idsToDelete = generatingShapeIdsRef.current;
-                  
-                  // Workaround: Select shapes to get their combined bounds
-                  editor.select(...idsToDelete);
-                  const bounds = editor.getSelectionPageBounds(); 
-                  editor.selectNone(); // Deselect immediately
-                  
-                  // *** Log the calculated bounds ***
-                  console.log("Calculated bounds for replacement:", bounds);
-
-                  if (!bounds) { 
-                      console.error("Could not calculate bounds for original shapes.");
-                      // Handle error or fallback (e.g., place image at center)
-                      setIsGeneratingImage(false); // Ensure loading state is off
-                      generatingShapeIdsRef.current = [];
-                      return; 
-                  }
-
-                  // Delete the original shapes
-                  console.log("Replacing original shapes with generated image:", idsToDelete);
-                  editor.deleteShapes(idsToDelete);
-                  
-                  // *** Log the properties before creating the shape ***
-                  const imageShapeProps = {
-                      type: 'image' as const, // Ensure type is literal
-                      x: bounds.minX,
-                      y: bounds.minY,
-                      props: { 
-                          url: data.imageUrl, 
-                          w: bounds.width,
-                          h: bounds.height,
-                      }
-                  };
-                  console.log("Creating image shape with props:", imageShapeProps);
-
-                  // Create the new image shape at the original position and size
-                  editor.createShapes([imageShapeProps]); // Use the logged props
-                  
-                  editor.selectNone();
-                  generatingShapeIdsRef.current = []; // Clear the ref
-              } else {
-                   console.warn("Editor not available or no shape IDs stored after generation.")
-                   // Fallback: add image to center if originals can't be replaced
-                    if (editor) {
-                        editor.createShapes([
-                            { type: 'image', x: editor.getViewportScreenCenter().x - 100, y: editor.getViewportScreenCenter().y - 100, props: { url: data.imageUrl, w: 200, h: 200 } }
-                        ]);
-                    }
-              }
+              alert(`Image generated! Opening in new tab: ${data.imageUrl}`);
+              
+              // *** Open the image URL in a new browser tab ***
+              window.open(data.imageUrl, '_blank');
           } else {
               console.error("AI generation failed on server (success: false).");
               alert(`Image generation failed: Unknown server error`); 
@@ -118,7 +68,6 @@ export default function EditorPage() {
           console.error("Error calling generateImage mutation:", error);
           alert(`Image generation failed: ${error.message}`);
           setIsGeneratingImage(false);
-          generatingShapeIdsRef.current = []; // Clear ref on error too
       },
   });
 
@@ -218,7 +167,6 @@ export default function EditorPage() {
 
       console.log(`Generating image from current page content with prompt: "${userPrompt}"`);
       setIsGeneratingImage(true);
-      generatingShapeIdsRef.current = []; // Clear previous IDs
 
       try {
           const allShapes = editor.getCurrentPageShapes();
@@ -228,16 +176,12 @@ export default function EditorPage() {
               return;
           }
 
-          // *** Store the IDs of the shapes being used ***
-          generatingShapeIdsRef.current = allShapes.map(shape => shape.id);
-
-          // Get SVG string (as before)
+          // Get SVG string
           const svgExportResult = await editor.getSvgString(allShapes, {
               scale: 1,
               background: editor.user.getIsDarkMode() ? true : undefined,
               darkMode: editor.user.getIsDarkMode()
           });
-
           const svgString = svgExportResult?.svg;
           if (!svgString) {
               throw new Error("Failed to generate SVG string from canvas content.");
@@ -257,7 +201,6 @@ export default function EditorPage() {
           console.error("Error preparing for image generation:", error);
           alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
           setIsGeneratingImage(false);
-          generatingShapeIdsRef.current = []; // Clear ref on error
       }
   };
 

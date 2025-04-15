@@ -10,8 +10,8 @@ const model = 'jagilley/controlnet-scribble:435061a1b5a4c1e26740464bf786efdfa9cb
 const input = {
   image: 'https://replicate.delivery/pbxt/IJE6zP4jtdwxe7SffC7te9DPHWHW99dMXED5AWamlBNcvxn0/user_1.png',
   scale: 9,
-  prompt: 'a photo of a brightly colored turtle',
-  a_prompt: 'best quality, extremely detailed',
+  prompt: 'A photo of a draw image that needs to be completed',
+  a_prompt: 'best quality, extremely detailed but respecting the original image',
   n_prompt: 'longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality',
   ddim_steps: 20,
   num_samples: '1',

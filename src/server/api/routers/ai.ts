@@ -94,19 +94,27 @@ async function generateImageWithReplicate(
 
         if (finalPrediction.status === 'succeeded') {
             console.log("AI Router: Prediction succeeded. Output:", finalPrediction.output);
-            // Validate the final output structure
-            if (Array.isArray(finalPrediction.output) && finalPrediction.output.length > 0 && typeof finalPrediction.output[0] === 'string') {
-                const resultUrl = finalPrediction.output[0];
-                if (resultUrl.startsWith('http://') || resultUrl.startsWith('https://')) {
-                     console.log("AI Router: Received valid image URL.");
-                     return resultUrl;
+            // Validate the final output structure - Check for at least TWO items
+            if (Array.isArray(finalPrediction.output) && finalPrediction.output.length > 1) { 
+                // *** Get the SECOND item (index 1) ***
+                const resultUrl = finalPrediction.output[1]; 
+                if (typeof resultUrl === 'string' && (resultUrl.startsWith('http://') || resultUrl.startsWith('https://'))) {
+                     console.log("AI Router: Received valid image URL (index 1).");
+                     return resultUrl; // Return the SECOND image URL
                 } else {
-                     console.error("AI Router: Received string output, but it doesn't look like a URL:", resultUrl);
-                     throw new Error("Prediction output string is not a valid URL.");
+                     console.error("AI Router: Second output item is not a valid string URL:", resultUrl);
+                     // Fallback or specific error? Maybe try index 0 if 1 fails?
+                     // For now, throw an error indicating the expected item failed.
+                     throw new Error("Prediction output[1] string is not a valid URL.");
                 }
             } else {
-                console.error("AI Router: Prediction succeeded, but output format is unexpected:", finalPrediction.output);
-                throw new Error("Prediction completed, but the output format was not the expected URL array.");
+                console.error("AI Router: Prediction succeeded, but output format is unexpected (expected array with at least 2 URLs):", finalPrediction.output);
+                // Consider falling back to output[0] if it exists and is valid?
+                if (Array.isArray(finalPrediction.output) && finalPrediction.output.length > 0 && typeof finalPrediction.output[0] === 'string') {
+                    console.warn("AI Router: Falling back to using output[0] as output[1] was unavailable/invalid.")
+                    return finalPrediction.output[0];
+                }
+                throw new Error("Prediction completed, but did not contain the expected second output URL.");
             }
         } else if (finalPrediction.status === 'failed') {
             console.error("AI Router: Prediction failed.", finalPrediction.error);

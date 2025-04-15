@@ -15,5 +15,7 @@ export REPLICATE_API_TOKEN=...
 Then run your app:
 
 ```console
-npm start
+npm install
+
+npm run dev
 ```

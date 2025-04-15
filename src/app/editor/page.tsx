@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Editor, TLShapeId, TLStoreSnapshot, Tldraw as TldrawType, track, useEditor, TLRecord } from '@tldraw/tldraw';
+import { Editor, TLShapeId,  TLRecord } from '@tldraw/tldraw';
 import '@tldraw/tldraw/tldraw.css';
 import { api } from '@/trpc/react';
 import { Button } from '@/components/ui/button';
@@ -12,94 +12,117 @@ const DynamicTldraw = dynamic(async () => (await import('@tldraw/tldraw')).Tldra
   ssr: false,
 });
 
-// Debounce function
-function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
+// Debounce function - Add specific type for Editor callback
+function debounce<T extends (editor: Editor) => void>(func: T, wait: number): T {
 	let timeout: ReturnType<typeof setTimeout> | null = null;
-	return (...args: Parameters<T>) => {
+	return ((editor: Editor) => {
 		const later = () => {
 			timeout = null;
-			func(...args);
+			func(editor);
 		};
 		if (timeout) {
 			clearTimeout(timeout);
 		}
 		timeout = setTimeout(later, wait);
-	};
+	}) as T; // Cast back to original type T
 }
 
 export default function EditorPage() {
   const [editor, setEditor] = useState<Editor | null>(null);
-  const isDataLoadedRef = useRef(false); // Track if data load attempt completed
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false); // State for AI generation loading
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [userPrompt, setUserPrompt] = useState("make a crazy version of that draw");
+  // Ref to store IDs of shapes used for generation
+  const generatingShapeIdsRef = useRef<TLShapeId[]>([]);
 
-  // Fetch initial document - disable more refetches
-  const { data: initialDocument, isLoading: isLoadingDocument, error: documentError, isSuccess: isDocumentLoadSuccess } = api.document.getDocument.useQuery(
+  // Fetch initial document - call query without destructuring unused variables
+  api.document.getDocument.useQuery(
     undefined,
     {
       refetchOnWindowFocus: false,
-      refetchOnReconnect: false, // Disable reconnect refetch
-      retry: 1, // Retry once on error? Or set to false
-      staleTime: Infinity, // Data is fresh forever after first fetch
+      refetchOnReconnect: false,
+      retry: 1,
+      staleTime: Infinity,
     }
   );
 
   // Mutation for saving the document
-  const { mutate: saveDocument, isLoading: isSavingDocument, error: saveError } = api.document.saveDocument.useMutation({
+  const { mutate: saveDocument, isPending: isSavingDocument, error: saveError } = api.document.saveDocument.useMutation({
      onSuccess: () => console.log("Document saved successfully via API."),
      onError: (error) => console.error("Error saving document:", error)
   });
 
-  // *** Add the tRPC mutation hook for AI generation ***
-  const generateImageMutation = api.ai.generateImageFromSvg.useMutation({
+  // *** Mutation hook for generateImageFromScribble ***
+  const generateImageMutation = api.ai.generateImageFromScribble.useMutation({
       onSuccess: (data) => {
           if (data.success && data.imageUrl) {
               console.log("Successfully generated image URL:", data.imageUrl);
-              alert(`Image generated! URL: ${data.imageUrl}`); // Replace with better UI
+              alert(`Image generated! URL: ${data.imageUrl}`);
 
-              // Optional: Add image shape to canvas
-              if (editor) {
-                  const bounds = editor.getSelectionPageBounds();
-                  const PADDING = 20;
-                  const IMAGE_SIZE = 200; // Example size
-                   if (bounds) {
-                     editor.createShapes([
-                        {
-                            type: 'image',
-                            x: bounds.maxX + PADDING, // Position to the right of selection
-                            y: bounds.y,
-                            props: { url: data.imageUrl, w: IMAGE_SIZE, h: IMAGE_SIZE }
-                        }
-                     ]);
-                     // Optional: deselect original shapes
-                     editor.selectNone();
-                   } else {
-                      // Fallback position if no bounds (e.g., page center)
-                       editor.createShapes([
-                        { type: 'image', x: editor.getViewportPageCenter().x, y: editor.getViewportPageCenter().y, props: { url: data.imageUrl, w: IMAGE_SIZE, h: IMAGE_SIZE } }
-                     ]);
-                   }
+              if (editor && generatingShapeIdsRef.current.length > 0) {
+                  const idsToDelete = generatingShapeIdsRef.current;
+                  
+                  // Workaround: Select shapes to get their combined bounds
+                  editor.select(...idsToDelete);
+                  const bounds = editor.getSelectionPageBounds(); 
+                  editor.selectNone(); // Deselect immediately
+                  
+                  if (!bounds) { 
+                      console.error("Could not calculate bounds for original shapes.");
+                      // Handle error or fallback (e.g., place image at center)
+                      setIsGeneratingImage(false); // Ensure loading state is off
+                      generatingShapeIdsRef.current = [];
+                      return; 
+                  }
+
+                  // Delete the original shapes
+                  console.log("Replacing original shapes with generated image:", idsToDelete);
+                  editor.deleteShapes(idsToDelete);
+                  
+                  // Create the new image shape at the original position and size
+                  editor.createShapes([
+                      {
+                          type: 'image',
+                          x: bounds.minX,
+                          y: bounds.minY,
+                          props: { 
+                              url: data.imageUrl, 
+                              w: bounds.width,
+                              h: bounds.height,
+                              // Optional: maintain aspect ratio? Might need more logic
+                              // assetId: null, // Or generate one if needed
+                          }
+                      }
+                  ]);
+                  editor.selectNone();
+                  generatingShapeIdsRef.current = []; // Clear the ref
+              } else {
+                   console.warn("Editor not available or no shape IDs stored after generation.")
+                   // Fallback: add image to center if originals can't be replaced
+                    if (editor) {
+                        editor.createShapes([
+                            { type: 'image', x: editor.getViewportScreenCenter().x - 100, y: editor.getViewportScreenCenter().y - 100, props: { url: data.imageUrl, w: 200, h: 200 } }
+                        ]);
+                    }
               }
-
-
           } else {
-              console.error("AI generation failed on server:", data.error);
-              alert(`Image generation failed: ${data.error || 'Unknown server error'}`);
+              console.error("AI generation failed on server (success: false).");
+              alert(`Image generation failed: Unknown server error`); 
           }
-           setIsGeneratingImage(false); // End loading state on success/handled error
+           setIsGeneratingImage(false);
       },
       onError: (error) => {
           console.error("Error calling generateImage mutation:", error);
           alert(`Image generation failed: ${error.message}`);
-          setIsGeneratingImage(false); // End loading state on network/trpc error
+          setIsGeneratingImage(false);
+          generatingShapeIdsRef.current = []; // Clear ref on error too
       },
   });
 
-  // Debounced save function
+  // Debounced save function - Use specific type
   const debouncedSave = useCallback(
 	debounce((editorInstance: Editor) => {
         if (!editorInstance) return;
 		const snapshot = editorInstance.store.getSnapshot();
-        // *** Log the snapshot structure on the client BEFORE sending ***
         console.log("Client: Snapshot before saving:", JSON.stringify(snapshot, null, 2));
         console.log("Saving document snapshot...");
         saveDocument(snapshot);
@@ -107,9 +130,9 @@ export default function EditorPage() {
 	[saveDocument]
   );
 
-  // Effect to set up the store listener
+  // Effect to set up the store listener - Use alternative ephemeral check
   useEffect(() => {
-    if (!editor) return; // Wait for editor instance
+    if (!editor) return; 
 
     console.log("Setting up editor listener...");
     const cleanup = editor.store.listen(
@@ -120,7 +143,9 @@ export default function EditorPage() {
             const changeDetails = entry.changes.added ?? entry.changes.updated ?? entry.changes.removed;
             if (changeDetails) {
                 for (const record of Object.values(changeDetails)) {
-                    if (record && !editor.store.isEphemeral(record.typeName)) {
+                    // Simplified ephemeral check: persistent records likely don't start with 'shape:'
+                    // This might need refinement based on exact tldraw v2 ephemeral types
+                    if (record && record.typeName && !record.typeName.startsWith('shape:')) { 
                         hasPersistentChange = true;
                         break;
                     }
@@ -131,14 +156,14 @@ export default function EditorPage() {
             console.log("Detected user change, preparing to save...");
             debouncedSave(editor);
         },
-        { scope: 'record', source: 'user' }
+        { scope: 'all', source: 'user' } 
       );
 
       return () => {
           console.log("Cleaning up editor listener...");
-          cleanup(); // Unsubscribe on unmount
+          cleanup(); 
       };
-  }, [editor, debouncedSave]); // Depend only on editor and the save function
+  }, [editor, debouncedSave]);
 
   // Simple callback to set the editor instance state when tldraw mounts
   const handleMount = useCallback((editorInstance: Editor) => {
@@ -183,31 +208,53 @@ export default function EditorPage() {
     }
   };
 
-  // *** Add handler for Generate Image button ***
+  // *** Updated Handler for Generate Image button ***
   const handleGenerateImage = async () => {
       if (!editor) return;
-      const selectedShapes = editor.getSelectedShapes();
-      if (selectedShapes.length === 0) {
-          alert("Please select some shapes first.");
-          return;
-      }
-      console.log(`Generating image from ${selectedShapes.length} shapes...`);
-      setIsGeneratingImage(true); // Start loading state
+
+      console.log(`Generating image from current page content with prompt: "${userPrompt}"`);
+      setIsGeneratingImage(true);
+      generatingShapeIdsRef.current = []; // Clear previous IDs
 
       try {
-          const svgString = await editor.getSvgString(selectedShapes, { scale: 1, background: false });
-          if (!svgString) throw new Error("Failed to generate SVG for selected shapes.");
+          const allShapes = editor.getCurrentPageShapes();
+          if (allShapes.length === 0) {
+              alert("Canvas is empty. Please draw something first.");
+              setIsGeneratingImage(false);
+              return;
+          }
 
-          console.log("Generated SVG:", svgString);
-          // Call the tRPC mutation
-          generateImageMutation.mutate({ svgString });
+          // *** Store the IDs of the shapes being used ***
+          generatingShapeIdsRef.current = allShapes.map(shape => shape.id);
+
+          // Get SVG string (as before)
+          const svgExportResult = await editor.getSvgString(allShapes, {
+              scale: 1,
+              background: editor.user.getIsDarkMode() ? true : undefined,
+              darkMode: editor.user.getIsDarkMode()
+          });
+
+          const svgString = svgExportResult?.svg;
+          if (!svgString) {
+              throw new Error("Failed to generate SVG string from canvas content.");
+          }
+
+          console.log(`Generated SVG string (length: ${svgString.length})`);
+
+          const mutationPayload = { 
+              svgString: svgString, 
+              prompt: userPrompt 
+          };
+          console.log("Client: Calling generateImageFromScribble mutation...", { prompt: userPrompt });
+
+          generateImageMutation.mutate(mutationPayload);
 
       } catch (error) {
           console.error("Error preparing for image generation:", error);
           alert(`Error: ${error instanceof Error ? error.message : String(error)}`);
-          setIsGeneratingImage(false); // End loading state if SVG generation fails
+          setIsGeneratingImage(false);
+          generatingShapeIdsRef.current = []; // Clear ref on error
       }
-      // NOTE: setIsGeneratingImage(false) is now handled by the mutation's onSuccess/onError
   };
 
   // Render the editor. The useEffect hooks will handle setting up the editor instance,
@@ -218,24 +265,41 @@ export default function EditorPage() {
           persistenceKey="tldraw-editor-test-v4"
           onMount={handleMount}
         >
-          {/* Custom UI - Render only when editor is available */}
+          {/* Custom UI */}
           {editor && (
-             <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1000, display: 'flex', gap: '8px' }}> {/* Use flex for layout */}
-                 <Button onClick={handleModifyShape} disabled={isSavingDocument}>
+             <div style={{ 
+                 position: 'absolute', 
+                 top: 10, 
+                 left: 10, 
+                 zIndex: 1000, 
+                 display: 'flex', 
+                 gap: '8px', 
+                 backgroundColor: 'rgba(255, 255, 255, 0.8)', // Add slight background for readability
+                 padding: '5px', 
+                 borderRadius: '4px' 
+             }}>
+                 <Button onClick={handleModifyShape} disabled={isSavingDocument || isGeneratingImage}>
                      {isSavingDocument ? 'Saving...' : 'Modify Shape'}
                  </Button>
+                 <input 
+                     type="text"
+                     value={userPrompt}
+                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUserPrompt(e.target.value)}
+                     placeholder="Enter your prompt..."
+                     disabled={isGeneratingImage}
+                     style={{width: '300px', padding: '5px', border: '1px solid #ccc', borderRadius: '4px'}} // Basic styling
+                 />
                  <Button
                      onClick={handleGenerateImage}
-                     disabled={isGeneratingImage || !editor} // Disable if generating or no editor
+                     disabled={isGeneratingImage || !editor || !userPrompt}
                  >
-                     {isGeneratingImage ? 'Generating...' : 'Generate Image'}
+                     {isGeneratingImage ? 'Generating...' : 'Generate Scribble'}
                  </Button>
-                 {/* Status indicators - remove documentError check related to loading */}
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft:'10px' }}>
+                 {/* Status indicators */} 
+                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft:'10px', justifyContent: 'center' }}>
                      {saveError && <p className="text-red-500 text-xs">Save failed</p>}
                      {isSavingDocument && <p className="text-blue-500 text-xs">Saving...</p>}
                      {generateImageMutation.error && <p className="text-red-500 text-xs">AI Error: {generateImageMutation.error.message}</p>}
-                     {/* {documentError && isDataLoadedRef.current && <p className="text-yellow-500 text-xs">Note: Failed to load previous state.</p>} */}
                  </div>
             </div>
           )}

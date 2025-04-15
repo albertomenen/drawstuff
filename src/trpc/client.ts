@@ -1,7 +1,7 @@
 // src/trpc/client.ts
-import { createTRPCClient, httpBatchLink, loggerLink } from '@trpc/client';
+import { createTRPCClient, httpLink, loggerLink } from '@trpc/client';
 import { AppRouter } from '@/server/api/root';
-import superjson from 'superjson';
+// import superjson from 'superjson'; // <-- Temporarily remove superjson
 
 const getBaseUrl = () => {
   if (typeof window !== 'undefined') return ''; // browser should use relative url
@@ -10,15 +10,15 @@ const getBaseUrl = () => {
 };
 
 export const api = createTRPCClient<AppRouter>({
-  transformer: superjson,
   links: [
     loggerLink({
       enabled: (opts) =>
         process.env.NODE_ENV === 'development' ||
         (opts.direction === 'down' && opts.result instanceof Error),
     }),
-    httpBatchLink({
+    httpLink({
       url: `${getBaseUrl()}/api/trpc`,
+      // transformer: superjson, // <-- Temporarily remove transformer
     }),
   ],
 }); 

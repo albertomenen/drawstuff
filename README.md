@@ -28,14 +28,17 @@ This project is a web-based editor built using tldraw, integrated with an AI ima
 
 ## Setup and Installation
 
+
+
 1.  **Prerequisites:**
-    *   **Node.js:** Version **18.17.0 or higher** is required (due to the `sharp` library dependency). We recommend using [nvm](https://github.com/nvm-sh/nvm) to manage Node versions.
+    *   **Node.js:** Version **18.17.0 or higher** is required (due to the `sharp` library dependency). I recommend using [nvm](https://github.com/nvm-sh/nvm) to manage Node versions.
         ```bash
         # Example using nvm
         nvm install --lts
         nvm use --lts
         node -v # Verify version is v18+ or v20+
         ```
+        
     *   **npm/yarn/pnpm:** A Node.js package manager.
 
 2.  **Clone the repository:**
@@ -63,7 +66,7 @@ This project is a web-based editor built using tldraw, integrated with an AI ima
     *   Get an API token from [replicate.com/account](https://replicate.com/account).
     *   Add your token to the `.env` file:
         ```env
-        REPLICATE_API_TOKEN=r8_YourReplicateApiTokenHere
+        REPLICATE_API_TOKEN=r8_YourReplicateApiTokenHere ( if you dont have it dont worry, let me know and i will give it to you)
         ```
     *   **Important:** Add `.env` to your `.gitignore` file to avoid committing your secret token!
 
@@ -84,6 +87,9 @@ This project is a web-based editor built using tldraw, integrated with an AI ima
     *   Changes are automatically saved to the server's in-memory store after a short delay. Refreshing preserves the state.
     *   The "Modify Shape" button demonstrates programmatic shape updates and triggers a save.
 
+
+    
+
 2.  **AI Image Generation:**
     *   Draw a scribble or any shape(s) on the canvas.
     *   Optionally, modify the text in the input field next to the "Modify Shape" button (default prompt is "make a crazy version of that draw").
@@ -96,6 +102,11 @@ This project is a web-based editor built using tldraw, integrated with an AI ima
         *   Upon success, an alert will show the generated image URL.
         *   A new browser tab will automatically open displaying the generated image.
     *   **Note:** The generated image currently opens in a new tab. It does *not* replace the drawing on the canvas due to potential browser CORS restrictions when embedding images directly from `replicate.delivery`.
+
+    ![Application Screenshot](public/before.png)
+
+
+    ![AI Generation Demo](public/after.png)
 
 ## API Endpoints (tRPC)
 

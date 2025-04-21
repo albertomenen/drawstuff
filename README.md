@@ -117,3 +117,62 @@ Interaction with the backend is done via tRPC procedures called from the fronten
 *   `ai.generateImageFromScribble`: Takes an SVG string and a text prompt, converts the SVG to PNG, sends it to Replicate's ControlNet Scribble model, waits for completion, and returns the generated image URL. Called by the "Generate Scribble" button.
 
 You can monitor these calls and their payloads/responses using your browser's Network tab while interacting with the application.
+
+You can watch these API calls happen in your browser's Network tab if you're curious!
+
+## Requirements Checklist & Code Location
+
+This section maps the technical test requirements to the relevant parts of the codebase.
+
+**Functional Requirements:**
+
+1.  **Editor page:**
+    *   ✅ Implemented: `src/app/editor/page.tsx`
+2.  **API endpoint to retrieve store data:**
+    *   ✅ Implemented: 
+        *   Endpoint: `src/server/api/routers/document.ts` (`getDocument` procedure)
+        *   Client Usage: `src/app/editor/page.tsx` (`api.document.getDocument.useQuery`)
+3.  **Store updated after any change:**
+    *   ✅ Implemented: 
+        *   Detection/Save Logic: `src/app/editor/page.tsx` (`useEffect` with `editor.store.listen`, `debouncedSave`)
+        *   Endpoint: `src/server/api/routers/document.ts` (`saveDocument` procedure)
+    1.  **Button that modifies a shape:**
+        *   ✅ Implemented: `src/app/editor/page.tsx` (`handleModifyShape` function and associated button)
+4.  **Utilize Next.js API routes:**
+    *   ✅ Implemented: `src/app/api/trpc/[trpc]/route.ts` (Handles all tRPC requests)
+5.  **Use TailwindCSS/Shadcn:**
+    *   ✅ Implemented: `tailwind.config.ts`, `globals.css`, `src/components/ui/`, `className` props in components.
+6.  **Implement tRPC:**
+    *   ✅ Implemented: Core setup in `src/trpc/`, server logic in `src/server/api/`, client usage in `src/app/editor/page.tsx`.
+
+**Technical Requirements:**
+
+*   **Create Next.js application:**
+    *   ✅ Implemented: Project structure, `package.json`, `next.config.js`.
+*   **Set up TailwindCSS/Shadcn:**
+    *   ✅ Implemented: Config files (`tailwind.config.ts`, `postcss.config.js`), `globals.css`, `src/components/ui/`.
+*   **Construct tRPC API routes (retrieve, store):**
+    *   ✅ Implemented: `src/server/api/routers/document.ts` (`getDocument`, `saveDocument`). Served via `src/app/api/trpc/[trpc]/route.ts`.
+*   **Use Next.js app routing:**
+    *   ✅ Implemented: `src/app/editor/page.tsx` defines the `/editor` route.
+*   **Implement error handling/loading states:**
+    *   ✅ Implemented: `src/app/editor/page.tsx` (Using `isPending`, `error`, `onSuccess`, `onError` from `useMutation`).
+*   **Write simple documentation:**
+    *   ✅ Implemented: This `README.md` file.
+
+**Bonus Points:**
+
+*   **Implement additional features using AI:**
+    *   ✅ Implemented:
+        *   Backend: `src/server/api/routers/ai.ts` (`generateImageFromScribble`, SVG->PNG conversion with `sharp`, Replicate API call).
+        *   Frontend: `src/app/editor/page.tsx` (UI elements, `handleGenerateImage`, mutation call, opening result in new tab).
+        *   Requires `.env` file with `REPLICATE_API_TOKEN`.
+*   **Good design:**
+    *   ✅ Implemented: Use of Shadcn UI components and TailwindCSS for a clean interface.
+
+**Expected Deliverables:**
+
+*   **Repository with Next.js app:**
+    *   ✅ Provided: The current codebase.
+*   **README.md file:**
+    *   ✅ Provided: This file.
